@@ -14,6 +14,19 @@ import random
 import glob
 import math
 
+def selection(url):
+    label=open(url, 'r').read()
+    array=label.split("\n")
+    array.pop()
+    dist=100
+    for coord in array:
+        coord=coord.split(" ")
+        distaux=math.sqrt((0.5-float(coord[1]))**2+(0.5-float(coord[2]))**2)
+        if distaux<dist:
+            dist=distaux
+            eleccion=coord
+    return int(eleccion[0])
+
 ## Step 1: Create a dataloader for Pytorch
 class VehiclesDataset(Dataset):
     def __init__(self, train_dir, img_list, transform = None):
