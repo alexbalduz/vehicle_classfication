@@ -1,62 +1,55 @@
-import numpy as np
-import pandas as pd
 import os
-import cv2
-import matplotlib.pyplot as plt
+from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import torchvision
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 from sklearn.metrics import accuracy_score
-import copy
-from sklearn.metrics import classification_report
-import random
 import numpy as np
 from numpy import vstack
 from numpy import argmax
 import matplotlib.pyplot as plt
+import random
+import glob
+import math
 
 ## Step 1: Create a dataloader for Pytorch
-class CatDogDataset(Dataset):
+class VehiclesDataset(Dataset):
     def __init__(self, train_dir, img_list, transform = None):
         self.train_dir = train_dir
         self.transform = transform
         self.images = img_list
-
+        
     def __len__(self):
         return len(self.images)
-
+    
     def __getitem__(self, index):
         image_path = os.path.join(self.train_dir, self.images[index])
-        label = self.images[index].split(".")[0]
-        label = 0 if label == 'cat' else 1
-        img = cv2.imread(image_path)
+        label_path=image_path.replace('images','labels').replace(".jpg",".txt")
+        label=int(selection(label_path))
+
+        img = np.array(Image.open(image_path))
         if self.transform:
             img = self.transform(img)
         return img, torch.tensor(label)
 
-
 ## Step 2: Create training dataset
 data_transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Resize((256, 256)),
+    transforms.Resize((256, 256),antialias=None),
     transforms.ColorJitter(),
     transforms.RandomCrop(224),
     transforms.RandomHorizontalFlip()
 ])
 
 # Create dataloaders
-train_dir = 'dogs-vs-cats/train'
-images_paths = os.listdir(train_dir)
-random.shuffle(images_paths)
-train_img_list = images_paths[0:20000]
-val_img_list = images_paths[20000:25000]
-train_img_list = images_paths[0:2000]
-val_img_list = images_paths[2000:2500]
-train_dataset = CatDogDataset(train_dir, train_img_list, transform = data_transform)
-val_dataset = CatDogDataset(train_dir, val_img_list, transform = data_transform)
+train_dir = 'train/images/'
+train_img_list = os.listdir(train_dir)
+val_dir='valid/images/'
+val_img_list =  os.listdir(val_dir)
+train_dataset = VehiclesDataset(train_dir, train_img_list, transform = data_transform)
+val_dataset = VehiclesDataset(val_dir, val_img_list, transform = data_transform)
 train_dataloader = DataLoader(train_dataset, batch_size = 64, shuffle=True)
 val_dataloader = DataLoader(val_dataset, batch_size = 64, shuffle=False)
 
@@ -66,7 +59,7 @@ plt.figure(figsize=(16,32))
 grid_imgs = torchvision.utils.make_grid(samples[:32])
 np_grid_imgs = grid_imgs.numpy()
 # in tensor, image is (batch, width, height), so you have to transpose it to (width, height, batch) in numpy to show it.
-plt.imshow(cv2.cvtColor(np.transpose(np_grid_imgs, (1,2,0)), cv2.COLOR_BGR2RGB))
+plt.imshow(np.transpose(np_grid_imgs, (1,2,0)))
 plt.show()
 
 ## Step 3: Define Deep Learning model
@@ -80,9 +73,9 @@ class scratch_nn(nn.Module):
         self.relu = nn.ReLU()
         self.linear1 = nn.Linear(19600,1024)
         self.linear2 = nn.Linear(1024,512)
-        self.linear3 = nn.Linear(512,2)
+        self.linear3 = nn.Linear(512,7)
         self.classifier = nn.Softmax(dim=1)
-
+        
     def forward(self,x):
         x = self.mpool( self.relu(self.conv1(x)) )
         x = self.mpool( self.relu(self.conv2(x)) )
@@ -93,7 +86,7 @@ class scratch_nn(nn.Module):
         x = self.linear3(x)
         x = self.classifier(x)
         return x
-
+    
 ## Step 4: Define train_step and predict functions
 def train_step(train_loader, model, optimizer, criterion, device):
     # define the optimization
@@ -122,7 +115,6 @@ def train_step(train_loader, model, optimizer, criterion, device):
         # store
         predictions.append(yhat)
         actuals.append(actual)
-
     predictions, actuals = vstack(predictions), vstack(actuals)
     # calculate accuracy
     acc = accuracy_score(actuals, predictions)
@@ -163,11 +155,11 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, device)
         train_loss, train_acc = train_step(train_dataloader, model, optimizer, criterion, device)
         train_loss_list.append(train_loss)
         train_acc_list.append(train_acc*100)
-        print(f"Train: Loss at epoch {epoch} is {train_loss} and accuracy is {train_acc}%")
+        print(f"Train: Loss at epoch {epoch} is {train_loss} and accuracy is {train_acc*100}%")
         val_loss, val_acc = evaluation_step(val_dataloader, model, criterion, device)
         val_loss_list.append(val_loss)
         val_acc_list.append(val_acc*100)
-        print(f"Validation: Loss at epoch {epoch} is {val_loss} and accuracy is {val_acc}%")
+        print(f"Validation: Loss at epoch {epoch} is {val_loss} and accuracy is {val_acc*100}%")
         torch.save(model.state_dict(), model_file_name)
     return model, train_loss_list, train_acc_list, val_loss_list, val_acc_list
 
@@ -178,10 +170,9 @@ model = model.to(device)
 
 lr = 0.001
 weight_dec = 0.001
-model_file_name = "dogs_cats_model.pth"
+model_file_name = "vehicles_model.pth"
 optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_dec)
 criterion = nn.CrossEntropyLoss()
-print("Empieza entrenamiento")
 model, train_loss, train_acc, val_loss, val_acc = train(model, train_dataloader, val_dataloader, optimizer, criterion, device)
 
 # Step 7: Show results
